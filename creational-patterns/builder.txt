@@ -1,0 +1,142 @@
+The Builder Pattern
+
+1. Explanation
+The Builder pattern is a creational design pattern that lets you construct complex objects step by step. Unlike other creational patterns, Builder doesn't require products to have a common interface. It allows you to produce different types and representations of an object using the same construction code.
+
+Think of it like ordering a custom pizza or building a custom house. A house can have a foundation, walls, and a roof, but it might also optionally have a garage, a swimming pool, a garden, or smart heating systems. Instead of creating a massive, confusing constructor with 20 parameters (where most are passed as `null` or `false` for a basic house), the Builder pattern breaks down object construction into a series of clear, self-contained steps. You only call the steps you explicitly need to get the exact configuration you want.
+
+Diagram: Step-by-Step Object Assembly Line
+
+   [ Client Code ]
+          |
+          v (Invokes fluent configuration steps)
+   +-------------------------------------------------------+
+   |                  QueryBuilder Object                  |
+   +-------------------------------------------------------+
+     | .select("id, name") -> | .from("users") -> | .where("age > 18")
+     v                        v                   v
+   +-------------------------------------------------------+
+   |                     .build()                          | <-- Termination step
+   +-------------------------------------------------------+
+          |
+          v (Assembles and validates the final product)
+   +-------------------------------------------------------+
+   |                PostgresQuery Product                  |
+   +-------------------------------------------------------+
+
+2. Components Involved
+- Product: The complex object that is being constructed (e.g., `PostgresQuery`).
+- Builder (Interface/Class): Specifies or implements the abstract steps for creating the parts of the Product object.
+- Concrete Builder: Implements the building steps, tracks the internal state of construction, and defines a method to fetch the final assembled product (often implemented as a fluent static inner class in modern Java/backend development).
+- Client: Controls the construction process, passing configuration parameters sequentially, and calls the final termination step (`build()`) to receive the product.
+
+3. Code Example: Dynamic SQL Query Builder System
+
+// Product Class
+class PostgresQuery {
+    private final String selectClause;
+    private final String fromClause;
+    private final String whereClause;
+    private final String orderByClause;
+    private final int limitClause;
+
+    // Package-private or private constructor - can only be instantiated via the Builder
+    public PostgresQuery(Builder builder) {
+        this.selectClause = builder.selectClause;
+        this.fromClause = builder.fromClause;
+        this.whereClause = builder.whereClause;
+        this.orderByClause = builder.orderByClause;
+        this.limitClause = builder.limitClause;
+    }
+
+    public void execute() {
+        StringBuilder sql = new StringBuilder();
+        sql.append("SELECT ").append(selectClause);
+        sql.append(" FROM ").append(fromClause);
+        
+        if (whereClause != null && !whereClause.isEmpty()) {
+            sql.append(" WHERE ").append(whereClause);
+        }
+        if (orderByClause != null && !orderByClause.isEmpty()) {
+            sql.append(" ORDER BY ").append(orderByClause);
+        }
+        if (limitClause > 0) {
+            sql.append(" LIMIT ").append(limitClause);
+        }
+        sql.append(";");
+
+        System.out.println("Executing SQL on PostgreSQL: " + sql.toString());
+    }
+
+    // Static Inner Builder Class
+    public static class Builder {
+        private String selectClause = "*"; // Default fallback value
+        private String fromClause;          // Mandatory field
+        private String whereClause;         // Optional field
+        private String orderByClause;       // Optional field
+        private int limitClause = 0;        // Optional field
+
+        // Mandatory fields are enforced through the Builder constructor
+        public Builder(String tableName) {
+            this.fromClause = tableName;
+        }
+
+        public Builder select(String columns) {
+            this.selectClause = columns;
+            return this; // Returns the builder instance to support method chaining
+        }
+
+        public Builder where(String condition) {
+            this.whereClause = condition;
+            return this;
+        }
+
+        public Builder orderBy(String column) {
+            this.orderByClause = column;
+            return this;
+        }
+
+        public Builder limit(int maxRows) {
+            this.limitClause = maxRows;
+            return this;
+        }
+
+        // The final assembly method that returns the immutable Product
+        public PostgresQuery build() {
+            // Validation logic can be placed here before object creation
+            if (this.fromClause == null || this.fromClause.isEmpty()) {
+                throw new IllegalStateException("FROM clause table name must be specified.");
+            }
+            return new PostgresQuery(this);
+        }
+    }
+}
+
+// Main Driver Demo Class
+class BuilderPatternDemo {
+    public static void main(String[] args) {
+        System.out.println("--- Scenario 1: Building a Simple Basic Query ---");
+        PostgresQuery simpleQuery = new PostgresQuery.Builder("users")
+                .build();
+        simpleQuery.execute();
+
+        System.out.println("\n--- Scenario 2: Building a Complex Filtered Query ---");
+        PostgresQuery complexQuery = new PostgresQuery.Builder("orders")
+                .select("order_id, amount, customer_id")
+                .where("status = 'DELIVERED' AND amount > 150.00")
+                .orderBy("amount DESC")
+                .limit(10)
+                .build();
+        complexQuery.execute();
+    }
+}
+
+4. Case 2: Relatable Context in PostgreSQL & Backend Development
+When designing enterprise backend architectures matching a PostgreSQL datastore, the Builder pattern is heavily used to handle complexity safely:
+- Eliminating Telescoping Constructors: Domain entities mapping to rich PostgreSQL tables often end up with dozens of optional metadata tracking columns (e.g., `created_at`, `updated_by`, `is_deleted`, `tenant_id`, `version_lock`). Writing constructors to cover all variations creates unmaintainable code. A Builder lets your data persistence layer construct entities cleanly.
+- Safe Dynamic Filtering: When building an advanced search API where a web frontend sends optional filter query parameters (like searching users by email, or phone number, or join date range), manually pasting raw string fragments together (`query += " WHERE " + input`) leads directly to broken logic and severe SQL Injection vulnerabilities. Using a structured query builder object encapsulates state transitions safely, ensuring values are bound as parameters properly.
+
+5. When to Use
+- When you want to get rid of a "telescoping constructor" (a constructor with an excessive number of parameters that forces complex or unnatural invocations).
+- When your code needs to build distinct representations of the same complex product (e.g., generating plain SQL string logs vs generating safe pre-compiled statements).
+- When creating immutable domain models or configuration payloads that must be completely validated and locked down upon initialization.
