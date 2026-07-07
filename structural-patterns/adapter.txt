@@ -1,0 +1,107 @@
+The Adapter Pattern
+
+1. Explanation
+The Adapter pattern is a structural design pattern that allows objects with incompatible interfaces to collaborate. It acts as a wrapper that converts the interface of an existing class into another interface that clients expect, enabling classes to work together that otherwise could not due to incompatible method signatures or data formats.
+
+The pattern is indispensable when you do not own or cannot change the source code of the class you want to use—such as third-party vendors, compiled SDKs, or deeply embedded legacy modules.
+
+Real-World Analogy: Think of an international power adapter. Your laptop charger has a three-prong plug, but the wall socket in the country you are visiting only accepts two-prong plugs. You do not tear down the wall to rewire the building's electrical framework, nor do you slice off your laptop's plug. Instead, you plug into an intermediate adapter. The adapter catches the electrical current from the wall and translates it into a format safely accepted by your device.
+
+Diagram: Third-Party SDK Integration Layer
+
+   [ Client / CheckoutController ]
+                 |
+                 v (Calls processPayment(double amountInDollars))
+         +---------------+
+         | StripeAdapter |   <-- The Adapter Layer (Implements PaymentGateway)
+         +---------------+
+                 |
+                 v (Translates dollars to cents & calls makeCharge())
+   +---------------------------+
+   |   Third-Party StripeSDK   |   <-- The Adaptee (Unchangeable Third-Party Jar/Library)
+   +---------------------------+
+
+The Adapter pattern handles data transformations, unit conversions, and structural discrepancies behind closed doors, keeping your core business controllers completely isolated and decoupled.
+
+2. Components Involved
+- Target (Interface): The domain-specific, uniform interface that your internal application code directly interacts with and expects (e.g., PaymentGateway).
+- Adapter (Class): A wrapper class that implements your Target interface, holds a private reference to the unchangeable Adaptee instance, and transforms incoming calls to match the Adaptee's signature. (e.g., StripeAdapter).
+- Adaptee (Class/Interface): The external service, third-party plugin, or legacy library that contains the necessary behavior but possesses a totally incompatible interface or data layout (e.g., StripeSDK).
+- Client: The class containing your core application logic that consumes the Target interface purely without any awareness of external vendor structures (e.g., CheckoutController).
+
+3. Code Example: Third-Party Payment Gateway Integration
+
+// Target Interface (What your internal application expects)
+interface PaymentGateway {
+    void processPayment(double amountInDollars);
+}
+
+// Adaptee Class (Third-Party SDK inside an unchangeable external library/JAR)
+class StripeSDK {
+    public void makeCharge(int amountInCents, String currencyType) {
+        System.out.println("⚡ [Stripe SDK] Securely charging account: " 
+                + amountInCents + " " + currencyType);
+    }
+}
+
+// Adapter Class (Bridges the gap between PaymentGateway and StripeSDK)
+class StripeAdapter implements PaymentGateway {
+    private StripeSDK stripeExternalService;
+
+    public StripeAdapter(StripeSDK stripeService) {
+        this.stripeExternalService = stripeService;
+    }
+
+    @Override
+    public void processPayment(double amountInDollars) {
+        // 1. Translate data format: Convert $49.99 (double) to 4999 (int cents)
+        int cents = (int) Math.round(amountInDollars * 100);
+        
+        // 2. Supplement missing parameters required by the third-party signature
+        String currency = "USD";
+        
+        // 3. Delegate the actual work to the completely different external method
+        stripeExternalService.makeCharge(cents, currency);
+    }
+}
+
+// Concrete Client Implementation
+class CheckoutController {
+    private PaymentGateway paymentProcessor;
+
+    // The client handles business workflows via clean abstraction boundaries
+    public CheckoutController(PaymentGateway gateway) {
+        this.paymentProcessor = gateway;
+    }
+
+    public void completeOrder() {
+        double totalCost = 49.99; 
+        System.out.println("Processing standard checkout order total: $" + totalCost);
+        
+        // Purely interacts with your native interface signature
+        paymentProcessor.processPayment(totalCost); 
+    }
+}
+
+// Main Driver Demo Class
+class AdapterPatternDemo {
+    public static void main(String[] args) {
+        System.out.println("--- Test Case: Processing Payment via Adapter ---");
+
+        // 1. Initialize the third-party component you don't control
+        StripeSDK externalStripeLibrary = new StripeSDK();
+        
+        // 2. Wrap it inside the adapter so it conforms to your application's expectations
+        PaymentGateway wrappedGateway = new StripeAdapter(externalStripeLibrary);
+        
+        // 3. Hand the adapter over to your internal checkout system
+        CheckoutController checkout = new CheckoutController(wrappedGateway);
+        checkout.completeOrder();
+    }
+}
+
+4. When to Use
+- When you want to utilize an existing class or third-party library, but its interface or data requirements do not match the rest of your application code.
+- When you are working with legacy components that cannot be altered because modifying the source code directly would risk breaking other dependent enterprise modules.
+- When you need to create a pluggable, future-proof layer over varying external infrastructure dependencies (e.g., swapping payment gateways, notification vendors, or SMS providers without touching core logic).
+- Use it to improve application flexibility, guarantee isolation for highly sensitive business layers, and smoothly absorb updates or changes released by external dependency vendors.
