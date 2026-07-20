@@ -1,0 +1,147 @@
+The Chain of Responsibility Pattern
+
+1. Explanation
+The Chain of Responsibility pattern is a behavioral design pattern that lets you pass requests along a chain of handlers. Upon receiving a request, each handler decides either to process the request or to pass it to the next handler in the chain.
+
+Think of it like corporate technical support: you call the helpdesk (Level 1). If the agent can resolve your simple password reset, the request stops there. If your query involves a deep PostgreSQL database replication lag, the Level 1 agent cannot solve it and passes the ticket to Level 2 (DBA Team). If it turns out to be a cloud infrastructure outage, it escalates further to Level 3 (SysOps). The client doesn't need to know which specific engineer will resolve the problem; they simply submit the request to the front of the chain.
+
+Diagram: Sequential Request Processing Pipeline
+
+   [ Client Request ]
+           |
+           v
+   +-----------------------+
+   |  AuthenticationStep   | ---> (Fails? Reject Request)
+   +-----------------------+
+           | (Passes)
+           v
+   +-----------------------+
+   |   QueryLoggingStep    | ---> (Logs query metrics to console)
+   +-----------------------+
+           | (Passes)
+           v
+   +-----------------------+
+   | QuerySanitizationStep | ---> (Blocks dangerous strings / SQL injection)
+   +-----------------------+
+           | (Passes)
+           v
+     [ Database Engine ]
+
+This structural pipeline decouples the sender of a request from its receivers, giving multiple objects a chance to handle the request systematically.
+
+2. Components Involved
+- Handler (Abstract Class/Interface): Defines the interface for handling requests and establishes the link to the `next` successor handler in the sequence.
+- Concrete Handler (Class): Implements the processing logic. It determines whether it can handle the payload itself; if it cannot (or if it needs to perform auxiliary tasks), it delegates execution to the next link.
+- Client: Assembles the pipeline structure by chaining specific concrete handlers together and passes the initial request to the first handler in the chain.
+
+3. Code Example: Database Request Interception Pipeline
+
+// Request Context Object
+class DbRequest {
+    private final String query;
+    private final String userRole;
+
+    public DbRequest(String query, String userRole) {
+        this.query = query;
+        this.userRole = userRole;
+    }
+
+    public String getQuery() { return query; }
+    public String getUserRole() { return userRole; }
+}
+
+// Base Abstract Handler
+abstract class DatabaseHandler {
+    protected DatabaseHandler nextHandler;
+
+    public void setNext(DatabaseHandler nextHandler) {
+        this.nextHandler = nextHandler;
+    }
+
+    // Template method defining the propagation flow
+    public void process(DbRequest request) {
+        if (handle(request) && nextHandler != null) {
+            nextHandler.process(request); // Forward to next link in the chain
+        }
+    }
+
+    // Abstract method for specific handler checks. Returns true to continue, false to halt.
+    protected abstract boolean handle(DbRequest request);
+}
+
+// Concrete Handler 1: Authentication Middleware
+class AuthHandler extends DatabaseHandler {
+    @Override
+    protected boolean handle(DbRequest request) {
+        System.out.println("[Auth] Verifying user permissions...");
+        if ("GUEST".equalsIgnoreCase(request.getUserRole()) && request.getQuery().toUpperCase().contains("DELETE")) {
+            System.out.println("[Auth] ACCESS DENIED: Guests cannot execute destructive queries.");
+            return false; // Break the chain
+        }
+        System.out.println("[Auth] Authentication passed.");
+        return true; // Continue execution
+    }
+}
+
+// Concrete Handler 2: Query Performance Logging Middleware
+class LoggingHandler extends DatabaseHandler {
+    @Override
+    protected boolean handle(DbRequest request) {
+        System.out.println("[Logging] Telemetry intercepted. Query queued for execution: " + request.getQuery());
+        return true; // Always continue to the next step
+    }
+}
+
+// Concrete Handler 3: Basic Security Sanitization Middleware
+class SecuritySanitizationHandler extends DatabaseHandler {
+    @Override
+    protected boolean handle(DbRequest request) {
+        System.out.println("[Sanitizer] Scanning query for structural vulnerabilities...");
+        if (request.getQuery().contains("; DROP TABLE")) {
+            System.out.println("[Sanitizer] WARNING: High-risk SQL injection block triggered!");
+            return false; // Halt execution immediately
+        }
+        System.out.println("[Sanitizer] Structural pattern check passed.");
+        return true; 
+    }
+}
+
+// Main Driver Execution Demo
+class ChainOfResponsibilityDemo {
+    public static void main(String[] args) {
+        // 1. Build the Chain Links
+        DatabaseHandler auth = new AuthHandler();
+        DatabaseHandler logger = new LoggingHandler();
+        DatabaseHandler sanitizer = new SecuritySanitizationHandler();
+
+        // 2. Form the sequential pipeline: Auth -> Logger -> Sanitizer
+        auth.setNext(logger);
+        logger.setNext(sanitizer);
+
+        System.out.println("--- Scenario 1: Executing a Safe Authorized Query ---");
+        DbRequest safeRequest = new DbRequest("SELECT * FROM products LIMIT 5;", "DEVELOPER");
+        auth.process(safeRequest);
+
+        System.out.println("\n--- Scenario 2: Guest Trying to Run a Destructive Delete ---");
+        DbRequest unauthorizedRequest = new DbRequest("DELETE FROM orders WHERE id = 100;", "GUEST");
+        auth.process(unauthorizedRequest);
+
+        System.out.println("\n--- Scenario 3: Malicious Query Interception ---");
+        DbRequest maliciousRequest = new DbRequest("SELECT username FROM users; DROP TABLE users;", "ADMIN");
+        auth.process(maliciousRequest);
+    }
+}
+
+4. Why Use This Pattern (SOLID Principles Alignment)
+- Open/Closed Principle (OCP): You can add, remove, or reorder middleware steps dynamically inside your application bootstrap without touching the code of existing handler classes or altering the main execution controllers.
+- Single Responsibility Principle (SRP): It decouples classes that invoke operations from classes that validate them. Instead of a single messy class handling authentication, safety audits, caching, and execution, each block is encapsulated inside a dedicated, highly testable handler module.
+
+5. Case 2: Relatable Context in PostgreSQL & Enterprise App Layers
+If you work with enterprise application web layers hooked up to PostgreSQL, you run into the Chain of Responsibility pattern constantly:
+- Web Filters and Interceptors: HTTP frameworks (like Spring Security Filters, Node.js Express Middleware, or custom Servlet Filters) use this exact pattern. When a request hits your server targeting a PostgreSQL database, it passes through a chained array of filters checking JWT validation, CORS headers, rate limiting, and transaction boundaries before it ever arrives at your controller logic.
+- Transactional Command Interception: Many ORM utilities or custom data repositories implement an internal database command execution chain. If a query is triggered, it passes through a Slow Query Interceptor (which checks execution times), an Audit Logger (which stamps `updated_at` records), and a Tenant ID Injector (which appends `WHERE tenant_id = X` to isolate multi-tenant schemas inside PostgreSQL) before sending the raw SQL statement across the wire.
+
+6. When to Use
+- When your system needs to execute a group of validation checks or processing blocks in a strict, sequential order.
+- When the specific object components that should process a given payload can only be determined dynamically at runtime.
+- When you want to issue a command to a generic layer without forcing the caller to handle the structural complexities of different processing workflows.
